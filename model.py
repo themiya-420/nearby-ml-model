@@ -5,7 +5,7 @@ from sklearn.cluster import KMeans
 app = Flask(__name__)
 
 # sample data in lat and long of famous places
-places = np.array([
+famous_places = np.array([
     [7.293757981, 80.64133572],  # Sri Dalada Maligawa, Kandy
     [7.268476644, 80.59655809],  # Royal Botanical Garden, Kandy
     [7.293194044, 80.64291027],  # British Garrison Cemetery, Kandy
@@ -62,46 +62,57 @@ places = np.array([
     [7.498122673, 80.6219905]  # Aluviharaya Rock Cave Temple, Matale
 ])
 
+# Initialize global variables for user location and nearest places
 user_location = None
-nearby_places = None
+nearest_places = None
 
 
-# KMeans Clustering model to find the nearest location from the reference point
-def find_nearby_places(user_lat, user_lon):
-    global nearby_places, user_location
+# Function to find nearest places using K-means clustering
+def find_nearest_places(start_latitude, start_longitude, end_latitude, end_longitude):
+    global user_location, nearest_places
 
-    user_location = np.array([user_lat, user_lon])
-
+    # Fit K-means clustering model to famous places data
     kmeans = KMeans(n_clusters=3, random_state=42)
-    kmeans.fit(places)
+    kmeans.fit(famous_places)
 
-    cluster_labels = kmeans.predict(places)
+    # Predict cluster labels for famous places
+    cluster_labels = kmeans.predict(famous_places)
 
-    user_clusters = kmeans.predict(user_location.reshape(1, -1))[0]
-    nearby_places_indices = np.where(cluster_labels == user_clusters)[0]
+    # Predict cluster labels for starting and ending points
+    start_cluster = kmeans.predict(np.array([[start_latitude, start_longitude]]))[0]
+    end_cluster = kmeans.predict(np.array([[end_latitude, end_longitude]]))[0]
 
-    nearby_places = places[nearby_places_indices]
+    # Categorize places based on cluster labels
+    nearest_to_start_indices = np.where(cluster_labels == start_cluster)[0]
+    nearest_to_end_indices = np.where(cluster_labels == end_cluster)[0]
+    in_between_indices = np.setdiff1d(np.arange(len(famous_places)), np.union1d(nearest_to_start_indices, nearest_to_end_indices))
+
+    nearest_places = {
+        'nearest_to_start': famous_places[nearest_to_start_indices].tolist(),
+        'nearest_to_end': famous_places[nearest_to_end_indices].tolist(),
+        'in_between': famous_places[in_between_indices].tolist()
+    }
 
 
-# function to predict nearby places
 @app.route('/predict', methods=['GET'])
-def predict():
-    if nearby_places is None:
-        return jsonify({'message': 'No nearby places!'}), 400
+def get_nearest_places():
+    if nearest_places is None:
+        return jsonify({'error': 'User location not available'}), 400
     else:
-        return jsonify(nearby_places.tolist())
+        return jsonify(nearest_places)
 
 
-# function to update the user's location
 @app.route('/update_location', methods=['POST'])
 def update_location():
     global user_location
 
     data = request.get_json()
-    user_lat = float(data['lat'])  # Parse latitude from request
-    user_lon = float(data['lon'])  # Parse longitude from request
+    start_latitude = float(data['start_latitude'])  # Parse starting latitude from request
+    start_longitude = float(data['start_longitude'])  # Parse starting longitude from request
+    end_latitude = float(data['end_latitude'])  # Parse ending latitude from request
+    end_longitude = float(data['end_longitude'])  # Parse ending longitude from request
 
-    find_nearby_places(user_lat, user_lon)
+    find_nearest_places(start_latitude, start_longitude, end_latitude, end_longitude)
 
     return jsonify({'message': 'Location updated successfully'})
 
